@@ -295,3 +295,7 @@ def test_complex(install_temp):
     arr = np.array([0, 10+10j], dtype="F")
     inc2_cfloat_struct(arr)
     assert arr[1] == (12 + 12j)
+
+
+def test_npystring_api(install_temp):
+    pytest.fail("Not implemented")
