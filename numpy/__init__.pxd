@@ -1191,11 +1191,18 @@ cdef extern from "numpy/arrayobject.h":
     int NpyString_pack_null(npy_string_allocator *allocator, npy_packed_static_string *packed_string)
     int NpyString_pack(npy_string_allocator *allocator, npy_packed_static_string *packed_string, const char *buf, size_t size)
 
+# Convenience context manager for acquiring locks for StringDType manipulations
 cdef class NpyStringLock:
+    cdef PyArray_StringDTypeObject _descr
+    cdef npy_string_allocator _allocator
+
     def __init__(self, const PyArray_StringDTypeObject *descr):
         self._descr = descr
+        self._allocator = None
 
     def __enter__(self):
-        NpyString_acquire_allocator(self._descr)
+        self._allocator = NpyString_acquire_allocator(self._descr)
+        return self._allocator
 
-    def __exit__(self)
+    def __exit__(self):
+        NpyString_release_allocator(self._descr)
