@@ -608,6 +608,7 @@ stringbuf_to_uint(char *in, npy_ulonglong *value, int has_null,
     return 0;
 }
 
+template<typename T>
 static npy_longlong
 stringbuf_to_int(char *in, npy_longlong *value, int has_null,
                  const npy_static_string *default_string,
@@ -618,13 +619,24 @@ stringbuf_to_int(char *in, npy_longlong *value, int has_null,
     if (pylong_value == NULL) {
         return -1;
     }
-    *value = PyLong_AsLongLong(pylong_value);
-    if (*value == -1 && PyErr_Occurred()) {
-        Py_DECREF(pylong_value);
-        return -1;
+
+    if constexpr (std::is_same_v<T, unsigned long long>) {
+        *value = PyLong_AsUnsignedLongLong(pylong_value);
+        if (*value == (unsigned long long)-1 && PyErr_Occurred()) {
+            goto fail;
+        }
+    } else {
+        *value = PyLong_AsLongLong(pylong_value);
+        if (*value == -1 && PyErr_Occurred()) {
+            goto fail;
+        }
     }
     Py_DECREF(pylong_value);
     return 0;
+
+fail:
+    Py_DECREF(pylong_value);
+    return -1;
 }
 
 static int
@@ -673,74 +685,100 @@ uint_to_stringbuf(unsigned long long in, char *out,
     return pyobj_to_string(pylong_val, out, allocator);
 }
 
+template<NPY_TYPES numpy_tag>
+static NPY_CASTING string_to_int_resolve_descriptors(
+    PyObject *NPY_UNUSED(self),
+    PyArray_DTypeMeta *NPY_UNUSED(dtypes[2]),
+    PyArray_Descr *given_descrs[2],
+    PyArray_Descr *loop_descrs[2],
+    npy_intp *NPY_UNUSED(view_offset)
+) {
+    if (given_descrs[1] == NULL) {
+        loop_descrs[1] = PyArray_DescrNewFromType(numpy_tag);
+    }
+    else {
+        Py_INCREF(given_descrs[1]);
+        loop_descrs[1] = given_descrs[1];
+    }
+
+    Py_INCREF(given_descrs[0]);
+    loop_descrs[0] = given_descrs[0];
+
+    return NPY_UNSAFE_CASTING;
+}
+
+void raise_cast_error(const char *type_name, int value) {
+    npy_gil_error(PyExc_OverflowError, "Integer %lli is out of bounds for %s", value, type_name);
+}
+
+template <typename TKind>
+void raise_cast_error(const char *type_name, uint value) {
+    npy_gil_error(PyExc_OverflowError, "Integer %llu is out of bounds for %s", value, type_name);
+}
+
+template <typename TNpyType, typename TNpyLongType, typename TKind>
+static int string_to_int(
+    PyArrayMethod_Context * context,
+    char *const data[],
+    npy_intp const dimensions[],
+    npy_intp const strides[],
+    NpyAuxData *NPY_UNUSED(auxdata),
+    char *printf_code,
+    char *type_name
+) {
+    PyArray_StringDTypeObject *descr =
+            ((PyArray_StringDTypeObject *)context->descriptors[0]);
+    npy_string_allocator *allocator =
+            NpyString_acquire_allocator(descr);
+    int has_null = descr->na_object != NULL;
+    const npy_static_string *default_string = &descr->default_string;
+
+    npy_intp N = dimensions[0];
+    char *in = data[0];
+    TNpyType *out = (TNpyType *)data[1];
+
+    npy_intp in_stride = strides[0];
+    npy_intp out_stride = strides[1] / sizeof(TNpyType);
+
+    while (N--) {
+        TNpyLongType value;
+        if (stringbuf_to_int(in, &value, has_null, default_string,
+                                 allocator) != 0) {
+            goto fail;
+        }
+        *out = (TNpyType)value;
+        if (*out != value) {
+            // out of bounds, raise error following NEP 50 behavior
+            const char *errmsg;
+            if constexpr (std::is_same_v<TKind, uint>) {
+                errmsg = "Integer %llu is out of bounds for %s";
+            } else {
+                errmsg = "Integer %lli is out of bounds for %s";
+            }
+            npy_gil_error(PyExc_OverflowError, errmsg, value, type_name);
+            goto fail;
+        }
+        in += in_stride;
+        out += out_stride;
+    }
+
+    NpyString_release_allocator(allocator);
+    return 0;
+
+  fail:
+    NpyString_release_allocator(allocator);
+    return -1;
+}
+
+static PyType_Slot s2int_slots[] = {
+    {NPY_METH_resolve_descriptors, &string_to_int_resolve_descriptors},
+    {NPY_METH_strided_loop, &string_to_int<npy_int8, npy_longlong, long long>},
+    {0, NULL}};
+
+
+
 #define STRING_INT_CASTS(typename, typekind, shortname, numpy_tag,                \
                          printf_code, npy_longtype, longtype)                     \
-        static NPY_CASTING string_to_##typename##_resolve_descriptors(            \
-                PyObject *NPY_UNUSED(self),                                       \
-                PyArray_DTypeMeta *NPY_UNUSED(dtypes[2]),                         \
-                PyArray_Descr *given_descrs[2], PyArray_Descr *loop_descrs[2],    \
-                npy_intp *NPY_UNUSED(view_offset))                                \
-        {                                                                         \
-            if (given_descrs[1] == NULL) {                                        \
-                loop_descrs[1] = PyArray_DescrNewFromType(numpy_tag);             \
-            }                                                                     \
-            else {                                                                \
-                Py_INCREF(given_descrs[1]);                                       \
-                loop_descrs[1] = given_descrs[1];                                 \
-            }                                                                     \
-                                                                                  \
-            Py_INCREF(given_descrs[0]);                                           \
-            loop_descrs[0] = given_descrs[0];                                     \
-                                                                                  \
-            return NPY_UNSAFE_CASTING;                                            \
-        }                                                                         \
-                                                                                  \
-        static int string_to_##                                                   \
-        typename(PyArrayMethod_Context * context, char *const data[],             \
-                 npy_intp const dimensions[], npy_intp const strides[],           \
-                 NpyAuxData *NPY_UNUSED(auxdata))                                 \
-        {                                                                         \
-            PyArray_StringDTypeObject *descr =                                    \
-                    ((PyArray_StringDTypeObject *)context->descriptors[0]);       \
-            npy_string_allocator *allocator =                                     \
-                    NpyString_acquire_allocator(descr);                           \
-            int has_null = descr->na_object != NULL;                              \
-            const npy_static_string *default_string = &descr->default_string;     \
-                                                                                  \
-            npy_intp N = dimensions[0];                                           \
-            char *in = data[0];                                                   \
-            npy_##typename *out = (npy_##typename *)data[1];                      \
-                                                                                  \
-            npy_intp in_stride = strides[0];                                      \
-            npy_intp out_stride = strides[1] / sizeof(npy_##typename);            \
-                                                                                  \
-            while (N--) {                                                         \
-                npy_longtype value;                                               \
-                if (stringbuf_to_##typekind(in, &value, has_null, default_string, \
-                                         allocator) != 0) {                       \
-                    goto fail;                                                    \
-                }                                                                 \
-                *out = (npy_##typename)value;                                     \
-                if (*out != value) {                                              \
-                    /* out of bounds, raise error following NEP 50 behavior */    \
-                    npy_gil_error(PyExc_OverflowError,                            \
-                             "Integer %" #printf_code                             \
-                             " is out of bounds "                                 \
-                             "for " #typename,                                    \
-                             value);                                              \
-                    goto fail;                                                    \
-                }                                                                 \
-                in += in_stride;                                                  \
-                out += out_stride;                                                \
-            }                                                                     \
-                                                                                  \
-            NpyString_release_allocator(allocator);                               \
-            return 0;                                                             \
-                                                                                  \
-          fail:                                                                   \
-            NpyString_release_allocator(allocator);                               \
-            return -1;                                                            \
-        }                                                                         \
                                                                                   \
         static PyType_Slot s2##shortname##_slots[] = {                            \
                 {NPY_METH_resolve_descriptors,                                    \
@@ -793,6 +831,8 @@ uint_to_stringbuf(unsigned long long in, char *out,
                                                                                   \
         static char *shortname##2s_name = "cast_" #typename "_to_StringDType";
 
+
+
 #define DTYPES_AND_CAST_SPEC(shortname, typename)                              \
         PyArray_DTypeMeta **s2##shortname##_dtypes = get_dtypes(               \
                 &PyArray_StringDType,                                          \
@@ -813,19 +853,15 @@ uint_to_stringbuf(unsigned long long in, char *out,
                 NPY_METH_REQUIRES_PYAPI, shortname##2s_dtypes,                 \
                 shortname##2s_slots);
 
-STRING_INT_CASTS(int8, int, i8, NPY_INT8, lli, npy_longlong, long long)
-STRING_INT_CASTS(int16, int, i16, NPY_INT16, lli, npy_longlong, long long)
-STRING_INT_CASTS(int32, int, i32, NPY_INT32, lli, npy_longlong, long long)
-STRING_INT_CASTS(int64, int, i64, NPY_INT64, lli, npy_longlong, long long)
-
-STRING_INT_CASTS(uint8, uint, u8, NPY_UINT8, llu, npy_ulonglong,
-                 unsigned long long)
-STRING_INT_CASTS(uint16, uint, u16, NPY_UINT16, llu, npy_ulonglong,
-                 unsigned long long)
-STRING_INT_CASTS(uint32, uint, u32, NPY_UINT32, llu, npy_ulonglong,
-                 unsigned long long)
-STRING_INT_CASTS(uint64, uint, u64, NPY_UINT64, llu, npy_ulonglong,
-                 unsigned long long)
+STRING_INT_CASTS(typename, typekind, shortname, numpy_tag,  printf_code, npy_longtype,  longtype)
+STRING_INT_CASTS(int8,     int,      i8,        NPY_INT8,   lli,         npy_longlong,  long long)
+STRING_INT_CASTS(int16,    int,      i16,       NPY_INT16,  lli,         npy_longlong,  long long)
+STRING_INT_CASTS(int32,    int,      i32,       NPY_INT32,  lli,         npy_longlong,  long long)
+STRING_INT_CASTS(int64,    int,      i64,       NPY_INT64,  lli,         npy_longlong,  long long)
+STRING_INT_CASTS(uint8,    uint,     u8,        NPY_UINT8,  llu,         npy_ulonglong, unsigned long long)
+STRING_INT_CASTS(uint16,   uint,     u16,       NPY_UINT16, llu,         npy_ulonglong, unsigned long long)
+STRING_INT_CASTS(uint32,   uint,     u32,       NPY_UINT32, llu,         npy_ulonglong, unsigned long long)
+STRING_INT_CASTS(uint64,   uint,     u64,       NPY_UINT64, llu,         npy_ulonglong, unsigned long long)
 
 #if NPY_SIZEOF_BYTE == NPY_SIZEOF_SHORT
 // byte doesn't have a bitsized alias
