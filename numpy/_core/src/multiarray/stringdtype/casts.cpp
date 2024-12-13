@@ -20,35 +20,32 @@
 #include "utf8_utils.h"
 
 
-#define ANY_TO_STRING_RESOLVE_DESCRIPTORS(safety)                              \
-        static NPY_CASTING any_to_string_##safety##_resolve_descriptors(       \
-                PyObject *NPY_UNUSED(self),                                    \
-                PyArray_DTypeMeta *NPY_UNUSED(dtypes[2]),                      \
-                PyArray_Descr *given_descrs[2], PyArray_Descr *loop_descrs[2], \
-                npy_intp *NPY_UNUSED(view_offset))                             \
-        {                                                                      \
-            if (given_descrs[1] == NULL) {                                     \
-                PyArray_Descr *new =                                           \
-                        (PyArray_Descr *)new_stringdtype_instance(             \
-                                NULL, 1);                                      \
-                if (new == NULL) {                                             \
-                    return (NPY_CASTING)-1;                                    \
-                }                                                              \
-                loop_descrs[1] = new;                                          \
-            }                                                                  \
-            else {                                                             \
-                Py_INCREF(given_descrs[1]);                                    \
-                loop_descrs[1] = given_descrs[1];                              \
-            }                                                                  \
-                                                                               \
-            Py_INCREF(given_descrs[0]);                                        \
-            loop_descrs[0] = given_descrs[0];                                  \
-                                                                               \
-            return NPY_##safety##_CASTING;                                     \
+template<NPY_CASTING safety>
+static NPY_CASTING any_to_string_resolve_descriptors(
+        PyObject *NPY_UNUSED(self),
+        PyArray_DTypeMeta *NPY_UNUSED(dtypes[2]),
+        PyArray_Descr *given_descrs[2], PyArray_Descr *loop_descrs[2],
+        npy_intp *NPY_UNUSED(view_offset))
+{
+    if (given_descrs[1] == NULL) {
+        PyArray_Descr *new_instance =
+                (PyArray_Descr *)new_stringdtype_instance(
+                        NULL, 1);
+        if (new_instance == NULL) {
+            return (NPY_CASTING)-1;
         }
+        loop_descrs[1] = new_instance;
+    }
+    else {
+        Py_INCREF(given_descrs[1]);
+        loop_descrs[1] = given_descrs[1];
+    }
 
-ANY_TO_STRING_RESOLVE_DESCRIPTORS(SAFE)
-ANY_TO_STRING_RESOLVE_DESCRIPTORS(SAME_KIND)
+    Py_INCREF(given_descrs[0]);
+    loop_descrs[0] = given_descrs[0];
+
+    return safety;
+}
 
 
 static NPY_CASTING
@@ -145,9 +142,9 @@ fail:
 }
 
 static PyType_Slot s2s_slots[] = {
-        {NPY_METH_resolve_descriptors, &string_to_string_resolve_descriptors},
-        {NPY_METH_strided_loop, &string_to_string},
-        {NPY_METH_unaligned_strided_loop, &string_to_string},
+        {NPY_METH_resolve_descriptors, (void *)&string_to_string_resolve_descriptors},
+        {NPY_METH_strided_loop, (void *)&string_to_string},
+        {NPY_METH_unaligned_strided_loop, (void *)&string_to_string},
         {0, NULL}};
 
 static char *s2s_name = "cast_StringDType_to_StringDType";
@@ -226,8 +223,8 @@ fail:
 }
 
 static PyType_Slot u2s_slots[] = {{NPY_METH_resolve_descriptors,
-                                   &any_to_string_SAME_KIND_resolve_descriptors},
-                                  {NPY_METH_strided_loop, &unicode_to_string},
+                                   (void *)&any_to_string_resolve_descriptors<NPY_SAME_KIND_CASTING>},
+                                  {NPY_METH_strided_loop, (void *)&unicode_to_string},
                                   {0, NULL}};
 
 static char *u2s_name = "cast_Unicode_to_StringDType";
@@ -357,8 +354,8 @@ fail:
 }
 
 static PyType_Slot s2u_slots[] = {
-        {NPY_METH_resolve_descriptors, &string_to_fixed_width_resolve_descriptors},
-        {NPY_METH_strided_loop, &string_to_unicode},
+        {NPY_METH_resolve_descriptors, (void *)&string_to_fixed_width_resolve_descriptors},
+        {NPY_METH_strided_loop, (void *)&string_to_unicode},
         {0, NULL}};
 
 static char *s2u_name = "cast_StringDType_to_Unicode";
@@ -451,8 +448,8 @@ fail:
 }
 
 static PyType_Slot s2b_slots[] = {
-        {NPY_METH_resolve_descriptors, &string_to_bool_resolve_descriptors},
-        {NPY_METH_strided_loop, &string_to_bool},
+        {NPY_METH_resolve_descriptors, (void *)&string_to_bool_resolve_descriptors},
+        {NPY_METH_strided_loop, (void *)&string_to_bool},
         {0, NULL}};
 
 static char *s2b_name = "cast_StringDType_to_Bool";
@@ -512,8 +509,8 @@ fail:
 }
 
 static PyType_Slot b2s_slots[] = {{NPY_METH_resolve_descriptors,
-                                   &any_to_string_SAFE_resolve_descriptors},
-                                  {NPY_METH_strided_loop, &bool_to_string},
+                                   (void *)&any_to_string_resolve_descriptors<NPY_SAFE_CASTING>},
+                                  {NPY_METH_strided_loop, (void *)&bool_to_string},
                                   {0, NULL}};
 
 static char *b2s_name = "cast_Bool_to_StringDType";
@@ -825,7 +822,7 @@ static PyType_Slot s2int_slots[] = {
                                                                                   \
         static PyType_Slot shortname##2s_slots [] = {                             \
                 {NPY_METH_resolve_descriptors,                                    \
-                 &any_to_string_SAFE_resolve_descriptors},                        \
+                 &any_to_string_resolve_descriptors<NPY_SAFE_CASTING>},           \
                 {NPY_METH_strided_loop, &typename##_to_string},                   \
                 {0, NULL}};                                                       \
                                                                                   \
@@ -1019,7 +1016,7 @@ string_to_pyfloat(char *in, int has_null,
                                                                               \
     static PyType_Slot shortname##2s_slots [] = {                             \
             {NPY_METH_resolve_descriptors,                                    \
-             &any_to_string_SAFE_resolve_descriptors},                        \
+             &any_to_string_resolve_descriptors<NPY_SAFE_CASTING>},           \
             {NPY_METH_strided_loop, &typename##_to_string},                   \
             {0, NULL}};                                                       \
                                                                               \
@@ -1465,7 +1462,7 @@ fail:
 
 static PyType_Slot dt2s_slots[] = {
         {NPY_METH_resolve_descriptors,
-         &any_to_string_SAFE_resolve_descriptors},
+         &any_to_string_resolve_descriptors<NPY_SAFE_CASTING>},
         {NPY_METH_strided_loop, &datetime_to_string},
         {0, NULL}};
 
@@ -1611,7 +1608,7 @@ fail:
 
 static PyType_Slot td2s_slots[] = {
         {NPY_METH_resolve_descriptors,
-         &any_to_string_SAFE_resolve_descriptors},
+         &any_to_string_resolve_descriptors<NPY_SAFE_CASTING>},
         {NPY_METH_strided_loop, &timedelta_to_string},
         {0, NULL}};
 
@@ -1765,7 +1762,7 @@ fail:
 }
 
 static PyType_Slot v2s_slots[] = {{NPY_METH_resolve_descriptors,
-                                   &any_to_string_SAME_KIND_resolve_descriptors},
+                                   &any_to_string_resolve_descriptors<NPY_SAME_KIND_CASTING>},
                                   {NPY_METH_strided_loop, &void_to_string},
                                   {0, NULL}};
 
@@ -1898,7 +1895,7 @@ fail:
 
 
 static PyType_Slot bytes2s_slots[] = {
-        {NPY_METH_resolve_descriptors, &any_to_string_SAME_KIND_resolve_descriptors},
+        {NPY_METH_resolve_descriptors, &any_to_string_resolve_descriptors<NPY_SAME_KIND_CASTING>},
         {NPY_METH_strided_loop, &bytes_to_string},
         {0, NULL}};
 
