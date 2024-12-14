@@ -1,3 +1,4 @@
+#include "numpy/npy_common.h"
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #define NPY_NO_DEPRECATED_API NPY_API_VERSION
@@ -682,7 +683,7 @@ uint_to_stringbuf(unsigned long long in, char *out,
     return pyobj_to_string(pylong_val, out, allocator);
 }
 
-template<NPY_TYPES numpy_tag>
+template<NPY_TYPES typenum>
 static NPY_CASTING string_to_int_resolve_descriptors(
     PyObject *NPY_UNUSED(self),
     PyArray_DTypeMeta *NPY_UNUSED(dtypes[2]),
@@ -691,7 +692,7 @@ static NPY_CASTING string_to_int_resolve_descriptors(
     npy_intp *NPY_UNUSED(view_offset)
 ) {
     if (given_descrs[1] == NULL) {
-        loop_descrs[1] = PyArray_DescrNewFromType(numpy_tag);
+        loop_descrs[1] = PyArray_DescrNewFromType(typenum);
     }
     else {
         Py_INCREF(given_descrs[1]);
@@ -704,24 +705,13 @@ static NPY_CASTING string_to_int_resolve_descriptors(
     return NPY_UNSAFE_CASTING;
 }
 
-void raise_cast_error(const char *type_name, int value) {
-    npy_gil_error(PyExc_OverflowError, "Integer %lli is out of bounds for %s", value, type_name);
-}
-
-template <typename TKind>
-void raise_cast_error(const char *type_name, uint value) {
-    npy_gil_error(PyExc_OverflowError, "Integer %llu is out of bounds for %s", value, type_name);
-}
-
-template <typename TNpyType, typename TNpyLongType, typename TKind>
+template <typename TNpyType, typename TNpyLongType, typename TKind, NPY_TYPES typenum>
 static int string_to_int(
     PyArrayMethod_Context * context,
     char *const data[],
     npy_intp const dimensions[],
     npy_intp const strides[],
-    NpyAuxData *NPY_UNUSED(auxdata),
-    char *printf_code,
-    char *type_name
+    NpyAuxData *NPY_UNUSED(auxdata)
 ) {
     PyArray_StringDTypeObject *descr =
             ((PyArray_StringDTypeObject *)context->descriptors[0]);
@@ -752,7 +742,7 @@ static int string_to_int(
             } else {
                 errmsg = "Integer %lli is out of bounds for %s";
             }
-            npy_gil_error(PyExc_OverflowError, errmsg, value, type_name);
+            npy_gil_error(PyExc_OverflowError, errmsg, value, npytype_to_char<TNpyType>);
             goto fail;
         }
         in += in_stride;
@@ -768,8 +758,8 @@ static int string_to_int(
 }
 
 static PyType_Slot s2int_slots[] = {
-    {NPY_METH_resolve_descriptors, &string_to_int_resolve_descriptors},
-    {NPY_METH_strided_loop, &string_to_int<npy_int8, npy_longlong, long long>},
+    {NPY_METH_resolve_descriptors, (void *)&string_to_int_resolve_descriptors<NPY_INT8>},
+    {NPY_METH_strided_loop, (void *)&string_to_int<npy_int8, npy_longlong, long long>},
     {0, NULL}};
 
 
