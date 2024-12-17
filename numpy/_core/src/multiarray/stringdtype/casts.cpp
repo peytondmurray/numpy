@@ -21,6 +21,179 @@
 #include "utf8_utils.h"
 
 
+template <typename TNpyType>
+static const char*typename_to_cstr() {
+    return "unknown";
+}
+
+template <>
+const char*typename_to_cstr<npy_int8>() {
+    return "int8";
+}
+template <>
+const char*typename_to_cstr<npy_int16>() {
+    return "int16";
+}
+template <>
+const char*typename_to_cstr<npy_int32>() {
+    return "int32";
+}
+template <>
+const char*typename_to_cstr<npy_int64>() {
+    return "int64";
+}
+template <>
+const char*typename_to_cstr<npy_uint8>() {
+    return "uint8";
+}
+template <>
+const char*typename_to_cstr<npy_uint16>() {
+    return "uint16";
+}
+template <>
+const char*typename_to_cstr<npy_uint32>() {
+    return "uint32";
+}
+template <>
+const char*typename_to_cstr<npy_uint64>() {
+    return "uint64";
+}
+template <>
+const char*typename_to_cstr<npy_longlong>() {
+    return "longlong";
+}
+template <>
+const char*typename_to_cstr<npy_ulonglong>() {
+    return "ulonglong";
+}
+
+// static const char *typenum_to_formatter(NPY_TYPES typenum) {
+//     switch (typenum) {
+//         case NPY_BOOL:
+//             return "%d";
+//         case NPY_BYTE:
+//             return "%i";
+//         case NPY_UBYTE:
+//             return "%u";
+//         case NPY_SHORT:
+//             return "%i";
+//         case NPY_USHORT:
+//             return "%u";
+//         case NPY_INT:
+//             return "%i";
+//         case NPY_UINT:
+//             return "uint";
+//         case NPY_LONG:
+//             return "%i";
+//         case NPY_ULONG:
+//             return "ulong";
+//         case NPY_LONGLONG:
+//             return "%i";
+//         case NPY_ULONGLONG:
+//             return "ulong long";
+//         case NPY_FLOAT:
+//             return "float";
+//         case NPY_DOUBLE:
+//             return "double";
+//         case NPY_LONGDOUBLE:
+//             return "long double";
+//         case NPY_CFLOAT:
+//             return "complex float";
+//         case NPY_CDOUBLE:
+//             return "complex double";
+//         case NPY_CLONGDOUBLE:
+//             return "complex long double";
+//         case NPY_OBJECT:
+//             return "object";
+//         case NPY_STRING:
+//             return "string";
+//         case NPY_UNICODE:
+//             return "unicode";
+//         case NPY_VOID:
+//             return "void";
+//         case NPY_DATETIME:
+//             return "datetime";
+//         case NPY_TIMEDELTA:
+//             return "timedelta";
+//         case NPY_HALF:
+//             return "half";
+//         case NPY_CHAR:
+//             return "char";
+//         case NPY_NOTYPE:
+//             return "no type";
+//         case NPY_USERDEF:
+//             return "user defined";
+//         case NPY_VSTRING:
+//             return "vstring";
+//         default:
+//             return "unknown";
+//     }
+// }
+
+static const char *typenum_to_cstr(NPY_TYPES typenum) {
+    switch (typenum) {
+        case NPY_BOOL:
+            return "bool";
+        case NPY_BYTE:
+            return "byte";
+        case NPY_UBYTE:
+            return "ubyte";
+        case NPY_SHORT:
+            return "short";
+        case NPY_USHORT:
+            return "ushort";
+        case NPY_INT:
+            return "int";
+        case NPY_UINT:
+            return "uint";
+        case NPY_LONG:
+            return "long";
+        case NPY_ULONG:
+            return "ulong";
+        case NPY_LONGLONG:
+            return "long long";
+        case NPY_ULONGLONG:
+            return "ulong long";
+        case NPY_FLOAT:
+            return "float";
+        case NPY_DOUBLE:
+            return "double";
+        case NPY_LONGDOUBLE:
+            return "long double";
+        case NPY_CFLOAT:
+            return "complex float";
+        case NPY_CDOUBLE:
+            return "complex double";
+        case NPY_CLONGDOUBLE:
+            return "complex long double";
+        case NPY_OBJECT:
+            return "object";
+        case NPY_STRING:
+            return "string";
+        case NPY_UNICODE:
+            return "unicode";
+        case NPY_VOID:
+            return "void";
+        case NPY_DATETIME:
+            return "datetime";
+        case NPY_TIMEDELTA:
+            return "timedelta";
+        case NPY_HALF:
+            return "half";
+        case NPY_CHAR:
+            return "char";
+        case NPY_NOTYPE:
+            return "no type";
+        case NPY_USERDEF:
+            return "user defined";
+        case NPY_VSTRING:
+            return "vstring";
+        default:
+            return "unknown";
+    }
+}
+
+
 template<NPY_CASTING safety>
 static NPY_CASTING any_to_string_resolve_descriptors(
         PyObject *NPY_UNUSED(self),
@@ -705,7 +878,11 @@ static NPY_CASTING string_to_int_resolve_descriptors(
     return NPY_UNSAFE_CASTING;
 }
 
-template <typename TNpyType, typename TNpyLongType, typename TKind, NPY_TYPES typenum>
+// Example template parameters:
+// TNpyType: npy_int8
+// TNpyLongType: npy_longlong
+// typenum: NPY_BYTE
+template <typename TNpyType, typename TNpyLongType, NPY_TYPES typenum>
 static int string_to_int(
     PyArrayMethod_Context * context,
     char *const data[],
@@ -737,12 +914,13 @@ static int string_to_int(
         if (*out != value) {
             // out of bounds, raise error following NEP 50 behavior
             const char *errmsg;
-            if constexpr (std::is_same_v<TKind, uint>) {
+            switch ()
+            if constexpr (std::is_same_v<TNpyTag, uint>) {
                 errmsg = "Integer %llu is out of bounds for %s";
             } else {
                 errmsg = "Integer %lli is out of bounds for %s";
             }
-            npy_gil_error(PyExc_OverflowError, errmsg, value, npytype_to_char<TNpyType>);
+            npy_gil_error(PyExc_OverflowError, errmsg, value, typenum_to_cstr(typenum));
             goto fail;
         }
         in += in_stride;
@@ -757,68 +935,61 @@ static int string_to_int(
     return -1;
 }
 
+template<typename TNpyType, typename TNpyLongType, NPY_TYPES typenum>
 static PyType_Slot s2int_slots[] = {
-    {NPY_METH_resolve_descriptors, (void *)&string_to_int_resolve_descriptors<NPY_INT8>},
-    {NPY_METH_strided_loop, (void *)&string_to_int<npy_int8, npy_longlong, long long>},
+    {NPY_METH_resolve_descriptors, (void *)&string_to_int_resolve_descriptors<typenum>},
+    {NPY_METH_strided_loop, (void *)&string_to_int<TNpyType, TNpyLongType, typenum>},
     {0, NULL}};
 
+template<NPY_TYPES typenum>
+static char *s2int_name = strcat("cast_StringDType_to_", typenum_to_cstr(typenum));
 
+template<typename TNpyType, typename TClongType, NPY_TYPES typenum>
+static int type_to_string(
+    PyArrayMethod_Context *context,
+    char *const data[],
+    npy_intp const dimensions[],
+    npy_intp const strides[],
+    NpyAuxData *NPY_UNUSED(auxdata)
+) {
+    npy_intp N = dimensions[0];
+    TNpyType *in = (TNpyType *)data[0];
+    char *out = data[1];
 
-#define STRING_INT_CASTS(typename, typekind, shortname, numpy_tag,                \
-                         printf_code, npy_longtype, longtype)                     \
-                                                                                  \
-        static PyType_Slot s2##shortname##_slots[] = {                            \
-                {NPY_METH_resolve_descriptors,                                    \
-                 &string_to_##typename##_resolve_descriptors},                    \
-                {NPY_METH_strided_loop, &string_to_##typename},                   \
-                {0, NULL}};                                                       \
-                                                                                  \
-        static char *s2##shortname##_name = "cast_StringDType_to_" #typename;     \
-                                                                                  \
-        static int typename##_to_string(                                          \
-                PyArrayMethod_Context *context, char *const data[],               \
-                npy_intp const dimensions[], npy_intp const strides[],            \
-                NpyAuxData *NPY_UNUSED(auxdata))                                  \
-        {                                                                         \
-            npy_intp N = dimensions[0];                                           \
-            npy_##typename *in = (npy_##typename *)data[0];                       \
-            char *out = data[1];                                                  \
-                                                                                  \
-            npy_intp in_stride = strides[0] / sizeof(npy_##typename);             \
-            npy_intp out_stride = strides[1];                                     \
-                                                                                  \
-            PyArray_StringDTypeObject *descr =                                    \
-                    (PyArray_StringDTypeObject *)context->descriptors[1];         \
-            npy_string_allocator *allocator =                                     \
-                    NpyString_acquire_allocator(descr);                           \
-                                                                                  \
-            while (N--) {                                                         \
-                if (typekind##_to_stringbuf(                                      \
-                            (longtype)*in, out, allocator) != 0) {                \
-                    goto fail;                                                    \
-                }                                                                 \
-                                                                                  \
-                in += in_stride;                                                  \
-                out += out_stride;                                                \
-            }                                                                     \
-                                                                                  \
-            NpyString_release_allocator(allocator);                               \
-            return 0;                                                             \
-                                                                                  \
-          fail:                                                                   \
-            NpyString_release_allocator(allocator);                               \
-            return -1;                                                            \
-        }                                                                         \
-                                                                                  \
-        static PyType_Slot shortname##2s_slots [] = {                             \
-                {NPY_METH_resolve_descriptors,                                    \
-                 &any_to_string_resolve_descriptors<NPY_SAFE_CASTING>},           \
-                {NPY_METH_strided_loop, &typename##_to_string},                   \
-                {0, NULL}};                                                       \
-                                                                                  \
-        static char *shortname##2s_name = "cast_" #typename "_to_StringDType";
+    npy_intp in_stride = strides[0] / sizeof(TNpyType);
+    npy_intp out_stride = strides[1];
 
+    PyArray_StringDTypeObject *descr =
+            (PyArray_StringDTypeObject *)context->descriptors[1];
+    npy_string_allocator *allocator =
+            NpyString_acquire_allocator(descr);
 
+    while (N--) {
+        if (type_to_stringbuf((TClongType)*in, out, allocator) != 0) {
+            goto fail;
+        }
+
+        in += in_stride;
+        out += out_stride;
+    }
+
+    NpyString_release_allocator(allocator);
+    return 0;
+
+  fail:
+    NpyString_release_allocator(allocator);
+    return -1;
+}
+
+template<typename TNpyType, typename TClongType, NPY_TYPES typenum>
+static PyType_Slot int2s_slots [] = {
+        {NPY_METH_resolve_descriptors,
+         (void *)&any_to_string_resolve_descriptors<NPY_SAFE_CASTING>},
+        {NPY_METH_strided_loop, (void *)&type_to_string<TNpyType, TClongType, typenum>},
+        {0, NULL}};
+
+template<NPY_TYPES typenum>
+static char *int2s_name = strcat(strcat("cast_", typenum_to_cstr(typenum)), "_to_StringDType");
 
 #define DTYPES_AND_CAST_SPEC(shortname, typename)                              \
         PyArray_DTypeMeta **s2##shortname##_dtypes = get_dtypes(               \
@@ -840,15 +1011,16 @@ static PyType_Slot s2int_slots[] = {
                 NPY_METH_REQUIRES_PYAPI, shortname##2s_dtypes,                 \
                 shortname##2s_slots);
 
-STRING_INT_CASTS(typename, typekind, shortname, numpy_tag,  printf_code, npy_longtype,  longtype)
-STRING_INT_CASTS(int8,     int,      i8,        NPY_INT8,   lli,         npy_longlong,  long long)
-STRING_INT_CASTS(int16,    int,      i16,       NPY_INT16,  lli,         npy_longlong,  long long)
-STRING_INT_CASTS(int32,    int,      i32,       NPY_INT32,  lli,         npy_longlong,  long long)
-STRING_INT_CASTS(int64,    int,      i64,       NPY_INT64,  lli,         npy_longlong,  long long)
-STRING_INT_CASTS(uint8,    uint,     u8,        NPY_UINT8,  llu,         npy_ulonglong, unsigned long long)
-STRING_INT_CASTS(uint16,   uint,     u16,       NPY_UINT16, llu,         npy_ulonglong, unsigned long long)
-STRING_INT_CASTS(uint32,   uint,     u32,       NPY_UINT32, llu,         npy_ulonglong, unsigned long long)
-STRING_INT_CASTS(uint64,   uint,     u64,       NPY_UINT64, llu,         npy_ulonglong, unsigned long long)
+//                                                 (NPY_TYPES)
+// STRING_INT_CASTS(typename, typekind, shortname, numpy_tag,  printf_code, npy_longtype,  longtype)
+// STRING_INT_CASTS(int8,     int,      i8,        NPY_INT8,   lli,         npy_longlong,  long long)
+// STRING_INT_CASTS(int16,    int,      i16,       NPY_INT16,  lli,         npy_longlong,  long long)
+// STRING_INT_CASTS(int32,    int,      i32,       NPY_INT32,  lli,         npy_longlong,  long long)
+// STRING_INT_CASTS(int64,    int,      i64,       NPY_INT64,  lli,         npy_longlong,  long long)
+// STRING_INT_CASTS(uint8,    uint,     u8,        NPY_UINT8,  llu,         npy_ulonglong, unsigned long long)
+// STRING_INT_CASTS(uint16,   uint,     u16,       NPY_UINT16, llu,         npy_ulonglong, unsigned long long)
+// STRING_INT_CASTS(uint32,   uint,     u32,       NPY_UINT32, llu,         npy_ulonglong, unsigned long long)
+// STRING_INT_CASTS(uint64,   uint,     u64,       NPY_UINT64, llu,         npy_ulonglong, unsigned long long)
 
 #if NPY_SIZEOF_BYTE == NPY_SIZEOF_SHORT
 // byte doesn't have a bitsized alias
@@ -869,10 +1041,10 @@ STRING_INT_CASTS(uint, uint, uint, NPY_UINT, llu, npy_longlong, long long)
 #endif
 #if NPY_SIZEOF_LONGLONG == NPY_SIZEOF_LONG
 // long long doesn't have a bitsized alias
-STRING_INT_CASTS(longlong, int, longlong, NPY_LONGLONG, lli, npy_longlong,
-                 long long)
-STRING_INT_CASTS(ulonglong, uint, ulonglong, NPY_ULONGLONG, llu, npy_ulonglong,
-                 unsigned long long)
+// STRING_INT_CASTS(longlong, int, longlong, NPY_LONGLONG, lli, npy_longlong,
+//                  long long)
+// STRING_INT_CASTS(ulonglong, uint, ulonglong, NPY_ULONGLONG, llu, npy_ulonglong,
+//                  unsigned long long)
 #endif
 
 static PyObject *
