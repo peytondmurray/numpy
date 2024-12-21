@@ -1012,7 +1012,9 @@ PyArrayMethod_Spec *StringToIntTypeCastSpec =
 
 
 template<typename TNpyType>
-PyArray_DTypeMeta **int2s_dtypes = get_dtypes(get_dtypemeta<TNpyType>, &PyArray_StringDType);
+PyArray_DTypeMeta **int2s_dtypes = get_dtypes(
+    get_dtypemeta<TNpyType>(), &PyArray_StringDType
+);
 
 template<typename TNpyType, typename TClongType, NPY_TYPES typenum>
 PyArrayMethod_Spec *IntTypeToStringCastSpec = get_cast_spec(
@@ -1169,8 +1171,8 @@ fail:
 
 template <typename TNpyType>
 static PyType_Slot float2s_slots [] = {
-    {NPY_METH_resolve_descriptors, &any_to_string_resolve_descriptors<NPY_SAFE_CASTING>},
-    {NPY_METH_strided_loop, &float_to_string<TNpyType>},
+    {NPY_METH_resolve_descriptors, (void *)&any_to_string_resolve_descriptors<NPY_SAFE_CASTING>},
+    {NPY_METH_strided_loop, (void *)&float_to_string<TNpyType>},
     {0, NULL}
 };
 
@@ -1618,13 +1620,17 @@ string_to_timedelta(PyArrayMethod_Context *context, char *const data[],
         if (is_null) {
             if (has_null && !has_string_na) {
                 *out = NPY_DATETIME_NAT;
-                goto next_step;
+                in += in_stride;
+                out += out_stride;
+                continue;
             }
             s = *default_string;
         }
         if (is_nat_string(&s)) {
             *out = NPY_DATETIME_NAT;
-            goto next_step;
+            in += in_stride;
+            out += out_stride;
+            continue;
         }
 
         PyObject *pystr = PyUnicode_FromStringAndSize(s.buf, s.size);
@@ -1647,7 +1653,6 @@ string_to_timedelta(PyArrayMethod_Context *context, char *const data[],
 
         *out = (npy_timedelta)value;
 
-    next_step:
         in += in_stride;
         out += out_stride;
     }
@@ -2119,9 +2124,9 @@ get_casts()
             &PyArray_StringDType, &PyArray_DatetimeDType);
 
     PyArrayMethod_Spec *StringToDatetimeCastSpec = get_cast_spec(
-        s2dt_name,
+        make_s2type_name<NPY_DATETIME>(),
         NPY_UNSAFE_CASTING,
-        NPY_METH_NO_FLOATINGPOINT_ERRORS | NPY_METH_REQUIRES_PYAPI,
+        static_cast<NPY_ARRAYMETHOD_FLAGS>(NPY_METH_NO_FLOATINGPOINT_ERRORS | NPY_METH_REQUIRES_PYAPI),
         s2dt_dtypes,
         s2dt_slots
     );
@@ -2130,9 +2135,9 @@ get_casts()
             &PyArray_DatetimeDType, &PyArray_StringDType);
 
     PyArrayMethod_Spec *DatetimeToStringCastSpec = get_cast_spec(
-        dt2s_name,
+        make_type2s_name<NPY_DATETIME>(),
         NPY_SAFE_CASTING,
-        NPY_METH_NO_FLOATINGPOINT_ERRORS | NPY_METH_REQUIRES_PYAPI,
+        static_cast<NPY_ARRAYMETHOD_FLAGS>(NPY_METH_NO_FLOATINGPOINT_ERRORS | NPY_METH_REQUIRES_PYAPI),
         dt2s_dtypes,
         dt2s_slots
     );
@@ -2141,9 +2146,9 @@ get_casts()
             &PyArray_StringDType, &PyArray_TimedeltaDType);
 
     PyArrayMethod_Spec *StringToTimedeltaCastSpec = get_cast_spec(
-        s2td_name,
+        make_s2type_name<NPY_TIMEDELTA>(),
         NPY_UNSAFE_CASTING,
-        NPY_METH_NO_FLOATINGPOINT_ERRORS | NPY_METH_REQUIRES_PYAPI,
+        static_cast<NPY_ARRAYMETHOD_FLAGS>(NPY_METH_NO_FLOATINGPOINT_ERRORS | NPY_METH_REQUIRES_PYAPI),
         s2td_dtypes,
         s2td_slots
     );
@@ -2152,9 +2157,9 @@ get_casts()
             &PyArray_TimedeltaDType, &PyArray_StringDType);
 
     PyArrayMethod_Spec *TimedeltaToStringCastSpec = get_cast_spec(
-        td2s_name,
+        make_type2s_name<NPY_TIMEDELTA>(),
         NPY_SAFE_CASTING,
-        NPY_METH_NO_FLOATINGPOINT_ERRORS | NPY_METH_REQUIRES_PYAPI,
+        static_cast<NPY_ARRAYMETHOD_FLAGS>(NPY_METH_NO_FLOATINGPOINT_ERRORS | NPY_METH_REQUIRES_PYAPI),
         td2s_dtypes,
         td2s_slots
     );
@@ -2163,7 +2168,7 @@ get_casts()
             &PyArray_StringDType, &PyArray_LongDoubleDType);
 
     PyArrayMethod_Spec *StringToLongDoubleCastSpec = get_cast_spec(
-        s2ld_name,
+        make_s2type_name<NPY_LONGDOUBLE>(),
         NPY_UNSAFE_CASTING,
         NPY_METH_NO_FLOATINGPOINT_ERRORS,
         s2ld_dtypes,
@@ -2174,18 +2179,18 @@ get_casts()
             &PyArray_LongDoubleDType, &PyArray_StringDType);
 
     PyArrayMethod_Spec *LongDoubleToStringCastSpec = get_cast_spec(
-        ld2s_name,
+        make_type2s_name<NPY_LONGDOUBLE>(),
         NPY_SAFE_CASTING,
-        NPY_METH_NO_FLOATINGPOINT_ERRORS | NPY_METH_REQUIRES_PYAPI,
+        static_cast<NPY_ARRAYMETHOD_FLAGS>(NPY_METH_NO_FLOATINGPOINT_ERRORS | NPY_METH_REQUIRES_PYAPI),
         ld2s_dtypes,
-        ld2s_slots
+        float2s_slots<npy_longdouble>
     );
 
     PyArray_DTypeMeta **s2v_dtypes = get_dtypes(
             &PyArray_StringDType, &PyArray_VoidDType);
 
     PyArrayMethod_Spec *StringToVoidCastSpec = get_cast_spec(
-        s2v_name,
+        make_s2type_name<NPY_VOID>(),
         NPY_SAME_KIND_CASTING,
         NPY_METH_NO_FLOATINGPOINT_ERRORS,
         s2v_dtypes,
@@ -2196,7 +2201,7 @@ get_casts()
             &PyArray_VoidDType, &PyArray_StringDType);
 
     PyArrayMethod_Spec *VoidToStringCastSpec = get_cast_spec(
-        v2s_name,
+        make_type2s_name<NPY_VOID>(),
         NPY_SAME_KIND_CASTING,
         NPY_METH_NO_FLOATINGPOINT_ERRORS,
         v2s_dtypes,
@@ -2207,7 +2212,7 @@ get_casts()
             &PyArray_StringDType, &PyArray_BytesDType);
 
     PyArrayMethod_Spec *StringToBytesCastSpec = get_cast_spec(
-        s2bytes_name,
+        make_s2type_name<NPY_BYTE>(),
         NPY_SAME_KIND_CASTING,
         NPY_METH_NO_FLOATINGPOINT_ERRORS,
         s2bytes_dtypes,
@@ -2218,7 +2223,7 @@ get_casts()
             &PyArray_BytesDType, &PyArray_StringDType);
 
     PyArrayMethod_Spec *BytesToStringCastSpec = get_cast_spec(
-        bytes2s_name,
+        make_type2s_name<NPY_BYTE>(),
         NPY_SAME_KIND_CASTING,
         NPY_METH_NO_FLOATINGPOINT_ERRORS,
         bytes2s_dtypes,
